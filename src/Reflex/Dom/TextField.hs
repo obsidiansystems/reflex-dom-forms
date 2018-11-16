@@ -25,11 +25,12 @@ data TextField t m = TextField{
   _textField_classes    :: ![Text],
   _textField_type       :: !TextFieldType,
   _textField_initValue  :: !Text,
-  _textField_attrs      :: !(Map Text Text),
+  _textField_attrs      :: !(Map AttributeName Text),
   _textField_insidePre  :: !(m ()),  -- ^ Stuff appearing *before* the input element within the widget
   _textField_insidePost :: !(m ()),  -- ^ Stuff appearing *after* the input element within the widget
   _textField_outsidePre :: !(m ()),  -- ^ Stuff appearing *before* the widget itself
-  _textField_setValue   :: !(Event t Text)
+  _textField_setValue   :: !(Event t Text),
+  _textField_setInvalid :: !(Event t Text)
   } deriving (Generic)
 
 instance (Applicative m, Reflex t) => Default (TextField t m) where
@@ -41,7 +42,8 @@ instance (Applicative m, Reflex t) => Default (TextField t m) where
     _textField_insidePre  = pure (),
     _textField_insidePost = pure (),
     _textField_outsidePre = pure (),
-    _textField_setValue   = never
+    _textField_setValue   = never,
+    _textField_setInvalid = never
     }
 
 -- | Builds an @input@ element based on a 'TextField' configuration.
@@ -55,17 +57,20 @@ mkField cfg = do
   elAttr "div" ("class" =: T.intercalate " " ("ui input" : _textField_classes cfg)) $ do
     _textField_insidePre cfg
 
-    textDyn <- case _textField_type cfg of
-      TextInputType typ -> _textInput_value <$> textInput (def
-        & textInputConfig_inputType    .~ typ
-        & textInputConfig_initialValue .~ _textField_initValue cfg
-        & textInputConfig_attributes   .~ pure (_textField_attrs cfg)
-        & textInputConfig_setValue     .~ _textField_setValue cfg
+    textDyn :: Dynamic t Text <- case _textField_type cfg of
+      TextInputType typ -> _inputElement_value <$> inputElement (def
+        & inputElementConfig_initialValue .~ _textField_initValue cfg
+        & inputElementConfig_setValue .~ _textField_setValue cfg
+        & inputElementConfig_setCustomValidity .~ _textField_setInvalid cfg
+        & inputElementConfig_elementConfig .
+          elementConfig_initialAttributes .~  Map.singleton "type" typ `Map.union` _textField_attrs cfg
         )
-      TextAreaType      -> _textArea_value <$> textArea (def
-        & textAreaConfig_initialValue .~ _textField_initValue cfg
-        & textAreaConfig_attributes   .~ pure (_textField_attrs cfg)
-        & textAreaConfig_setValue     .~ _textField_setValue cfg
+      TextAreaType      -> _textAreaElement_value <$> textAreaElement (def
+        & textAreaElementConfig_initialValue .~ _textField_initValue cfg
+        & textAreaElementConfig_setValue .~ _textField_setValue cfg
+        & textAreaElementConfig_setCustomValidity .~ _textField_setInvalid cfg
+        & textAreaElementConfig_elementConfig .
+          elementConfig_initialAttributes .~ _textField_attrs cfg
         )
 
     _textField_insidePost cfg
@@ -152,6 +157,9 @@ setInitial val0 cfg = cfg{ _textField_initValue = val0 }
 
 setChangeEvent :: Event t Text -> TextField t m -> TextField t m
 setChangeEvent setVal cfg = cfg{ _textField_setValue = setVal }
+
+setInvalidEvent :: Event t Text -> TextField t m -> TextField t m
+setInvalidEvent setInval cfg = cfg{ _textField_setInvalid = setInval }
 
 -- Common embellishments
 addPrefixLabel :: DomBuilder t m => m () -> TextField t m -> TextField t m
