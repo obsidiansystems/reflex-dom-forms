@@ -45,8 +45,11 @@ instance (Applicative m, Reflex t) => Default (TextField t m) where
     }
 
 -- | Builds an @input@ element based on a 'TextField' configuration.
-mkField :: forall t m. (DomBuilderSpace m ~ GhcjsDomSpace, DomBuilder t m, PostBuild t m)
-        => TextField t m -> m (Dynamic t Text)
+mkField ::
+  forall t m
+  .  (DomBuilderSpace m ~ GhcjsDomSpace, DomBuilder t m, PostBuild t m)
+  => TextField t m
+  -> m (Dynamic t Text)
 mkField cfg = do
   _textField_outsidePre cfg
   elAttr "div" ("class" =: T.intercalate " " ("ui input" : _textField_classes cfg)) $ do
