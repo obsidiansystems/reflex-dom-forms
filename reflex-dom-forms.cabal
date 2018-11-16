@@ -16,7 +16,7 @@ library
     Reflex.Dom.Form.Validators
     Reflex.Dom.Form.Widgets
     Reflex.Dom.TextField
-  hs-source-dirs: .
+  hs-source-dirs: src
   ghc-options:
     -Wall
     -Wincomplete-uni-patterns
