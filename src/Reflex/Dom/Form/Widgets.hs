@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
@@ -57,11 +58,17 @@ formItem' classes_ input = mdo
 
 -- | Builds an @input@ element with validated result.
 validatedInput
-  :: (DomBuilderSpace m ~ GhcjsDomSpace, DomBuilder t m, PostBuild t m)
+  :: (DomBuilderSpace m ~ GhcjsDomSpace, DomBuilder t m, PostBuild t m, MonadFix m)
   => Validator t m a -- A 'Validator' to use for validating and configuring the @input@
   -> TxtField.TextField t m -- A base 'TextField' to use as the @input@ configuration.
   -> m (Dynamic t (Either Text a))
-validatedInput (Validator check mods) cfg = fmap check <$> TxtField.mkField (mods cfg)
+validatedInput (Validator check mods) cfg = mdo
+  let cfg' = TxtField.setInvalidEvent err cfg
+  v <- fmap check <$> TxtField.mkField (mods cfg')
+  let err = ffor (updated v) $ \case
+        Left e -> e
+        Right _ -> ""
+  pure v
 
 
 latestLeft :: (Reflex t, MonadHold t m) => a -> Event t (Either a b) -> m (Dynamic t a)
