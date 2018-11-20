@@ -2,10 +2,12 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 
 module Reflex.Dom.TextField where
 
+import           Control.Lens     ((%~))
 import           Data.Default    (Default, def)
 import           Data.Map        (Map)
 import qualified Data.Map        as Map
@@ -52,29 +54,42 @@ mkField ::
   .  (DomBuilderSpace m ~ GhcjsDomSpace, DomBuilder t m, PostBuild t m)
   => TextField t m
   -> m (Dynamic t Text)
-mkField cfg = do
+mkField = fmap fst . mkField_ id
+
+mkField_ ::
+  forall t m
+  .  (DomBuilderSpace m ~ GhcjsDomSpace, DomBuilder t m, PostBuild t m)
+  => (GhcjsEventSpec EventResult -> GhcjsEventSpec EventResult)
+  -> TextField t m
+  -> m (Dynamic t Text, Element EventResult GhcjsDomSpace t)
+mkField_ eventSpecModifier cfg = do
   _textField_outsidePre cfg
   elAttr "div" ("class" =: T.intercalate " " ("ui input" : _textField_classes cfg)) $ do
     _textField_insidePre cfg
 
-    textDyn :: Dynamic t Text <- case _textField_type cfg of
-      TextInputType typ -> _inputElement_value <$> inputElement (def
-        & inputElementConfig_initialValue .~ _textField_initValue cfg
-        & inputElementConfig_setValue .~ _textField_setValue cfg
-        & inputElementConfig_setCustomValidity .~ _textField_setInvalid cfg
-        & inputElementConfig_elementConfig .
-          elementConfig_initialAttributes .~  Map.singleton "type" typ `Map.union` _textField_attrs cfg
-        )
-      TextAreaType      -> _textAreaElement_value <$> textAreaElement (def
-        & textAreaElementConfig_initialValue .~ _textField_initValue cfg
-        & textAreaElementConfig_setValue .~ _textField_setValue cfg
-        & textAreaElementConfig_setCustomValidity .~ _textField_setInvalid cfg
-        & textAreaElementConfig_elementConfig .
-          elementConfig_initialAttributes .~ _textField_attrs cfg
-        )
-
+    res <- case _textField_type cfg of
+      TextInputType typ -> do
+        res <- inputElement $ (def :: InputElementConfig EventResult t GhcjsDomSpace)
+          & inputElementConfig_initialValue .~ _textField_initValue cfg
+          & inputElementConfig_setValue .~ _textField_setValue cfg
+          & inputElementConfig_setCustomValidity .~ _textField_setInvalid cfg
+          & inputElementConfig_elementConfig .~ ((def :: ElementConfig EventResult t GhcjsDomSpace)
+            & elementConfig_initialAttributes .~  Map.singleton "type" typ `Map.union` _textField_attrs cfg
+            & elementConfig_eventSpec %~ eventSpecModifier
+            )
+        pure (_inputElement_value res, _inputElement_element res)
+      TextAreaType      -> do
+        res <- textAreaElement $ (def :: TextAreaElementConfig EventResult t GhcjsDomSpace)
+          & textAreaElementConfig_initialValue .~ _textField_initValue cfg
+          & textAreaElementConfig_setValue .~ _textField_setValue cfg
+          & textAreaElementConfig_setCustomValidity .~ _textField_setInvalid cfg
+          & textAreaElementConfig_elementConfig .~ ((def :: ElementConfig EventResult t GhcjsDomSpace)
+            & elementConfig_initialAttributes .~ _textField_attrs cfg
+            & elementConfig_eventSpec %~ eventSpecModifier
+            )
+        pure (_textAreaElement_value res, _textAreaElement_element res)
     _textField_insidePost cfg
-    pure textDyn
+    pure res
 
 
 addIcon :: (Applicative m) => Either (m ()) (m ()) -> TextField t m -> TextField t m
