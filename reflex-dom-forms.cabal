@@ -28,6 +28,7 @@ library
     , containers
     , data-default
     , email-validate
+    , ghcjs-dom
     , lens
     , reflex
     , reflex-dom-core

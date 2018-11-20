@@ -1,20 +1,46 @@
 {-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TupleSections         #-}
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 
 module Reflex.Dom.TextField where
 
-import           Control.Lens     ((%~))
-import           Data.Default    (Default, def)
-import           Data.Map        (Map)
-import qualified Data.Map        as Map
-import           Data.Text       (Text)
-import qualified Data.Text       as T
-import           GHC.Generics    (Generic)
+import           Control.Lens ((%~))
+import           Control.Monad (guard, void)
+import           Data.Default (Default, def)
+import           Data.Functor.Misc (WrapArg(..))
+import           Data.Map (Map)
+import qualified Data.Map as Map
+import           Data.Proxy (Proxy (..))
+import           Data.Text (Text)
+import qualified Data.Text as T
+import           GHC.Generics (Generic)
+import qualified GHCJS.DOM.Types as DOM
+import qualified GHCJS.DOM.HTMLInputElement as Input
+import qualified GHCJS.DOM.ValidityState as ValidityState
+import qualified Reflex.Class as Reflex
 import           Reflex.Dom.Core
+import           Reflex.Dom.Builder.Class.Events (EventName (Invalid))
+
+getValidityEvent
+  :: (DOM.MonadJSM (Performable m), PerformEvent t m)
+  => EventSelector t (WrapArg a EventName)
+  -> Input.HTMLInputElement
+  -> Event t ()
+  -> m (Event t (Maybe Text))
+getValidityEvent es domInputElement inputEvt = do
+  inputEvt' <- performEvent $ ffor inputEvt $ \() -> do
+    void $ Input.checkValidity domInputElement
+  validityEvt <- performEvent $ pure () <$ Reflex.select es (WrapArg Invalid)
+  performEvent $ ffor (leftmost [validityEvt, inputEvt']) $ \() -> do
+    vs <- Input.getValidity domInputElement
+    cond <- ValidityState.getValid vs
+    msg <- Input.getValidationMessage domInputElement
+    pure (msg <$ guard cond)
 
 data TextFieldType
   = TextInputType !Text  -- ^ Text input with a given element type (e.g. @"text"@, @"date"@, etc.)
@@ -48,13 +74,33 @@ instance (Applicative m, Reflex t) => Default (TextField t m) where
     _textField_setInvalid = never
     }
 
--- | Builds an @input@ element based on a 'TextField' configuration.
+-- | Builds an @input@ element based on a 'TextField' configuration. Invalid
+-- form errors are rendered natively by the browser.
 mkField ::
   forall t m
   .  (DomBuilderSpace m ~ GhcjsDomSpace, DomBuilder t m, PostBuild t m)
   => TextField t m
   -> m (Dynamic t Text)
 mkField = fmap fst . mkField_ id
+
+-- | Builds an @input@ element based on a 'TextField' configuration. Native
+-- validity errors are suppressed, and the validity error message (or lack their
+-- of) also returned for sake of custom display.
+mkFieldCustomErrorDisplay ::
+  forall t m
+  .  ( DomBuilderSpace m ~ GhcjsDomSpace, DomBuilder t m, PostBuild t m
+     , DOM.MonadJSM (Performable m), PerformEvent t m)
+  => TextField t m
+  -> m (Dynamic t Text, Event t (Maybe Text))
+mkFieldCustomErrorDisplay tf = do
+  (res, domElem) <- mkField_ f tf
+  eInvalid <- getValidityEvent
+    (_element_events domElem)
+    (DOM.uncheckedCastTo DOM.HTMLInputElement $ _element_raw domElem)
+    (() <$ updated res)
+  pure (res, eInvalid)
+  where
+    f = addEventSpecFlags @GhcjsDomSpace Proxy Invalid $ const stopPropagation
 
 mkField_ ::
   forall t m
